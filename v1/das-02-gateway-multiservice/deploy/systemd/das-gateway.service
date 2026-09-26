@@ -1,0 +1,21 @@
+[Unit]
+Description=DAS gateway (nginx): the single origin for the web UI and all APIs
+PartOf=das.target
+After=network.target das-core-api.service
+
+[Service]
+Type=forking
+Slice=das.slice
+PIDFile=/run/das/nginx.pid
+ExecStartPre=/usr/sbin/nginx -t -q -p /etc/das/nginx -c /etc/das/nginx/nginx.conf
+ExecStart=/usr/sbin/nginx -p /etc/das/nginx -c /etc/das/nginx/nginx.conf
+ExecReload=/usr/sbin/nginx -s reload -p /etc/das/nginx -c /etc/das/nginx/nginx.conf
+ExecStop=/usr/sbin/nginx -s quit -p /etc/das/nginx -c /etc/das/nginx/nginx.conf
+Nice=-5
+CPUWeight=400
+MemoryMax=64M
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=das.target

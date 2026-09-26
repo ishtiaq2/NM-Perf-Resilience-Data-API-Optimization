@@ -1,0 +1,28 @@
+{
+  "name": "das-02-gateway-multiservice",
+  "version": "2.0.0-gateway",
+  "private": true,
+  "description": "DAS Master Node backend split into isolated services behind one nginx origin, with WebSocket push, HTTP/2 and micro-caching.",
+  "engines": {
+    "node": ">=12.16"
+  },
+  "scripts": {
+    "start:core": "node services/core-api/server.js",
+    "start:spectrum": "node services/spectrum-service/server.js",
+    "start:telemetry": "node services/telemetry-service/server.js",
+    "local": "sh scripts/run-local.sh",
+    "test": "node --test test/*.test.js",
+    "conformance": "node conformance/run.js --base http://127.0.0.1:8080",
+    "demo:isolation": "node bench/isolation-demo.js --base http://127.0.0.1:8080",
+    "demo:push": "node bench/push-vs-poll.js --base http://127.0.0.1:8080",
+    "bench": "node bench/heartbeat-under-load.js --base http://127.0.0.1:8080",
+    "check:es2019": "node scripts/check-syntax.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "acorn": "^8.14.0"
+  },
+  "license": "UNLICENSED"
+}

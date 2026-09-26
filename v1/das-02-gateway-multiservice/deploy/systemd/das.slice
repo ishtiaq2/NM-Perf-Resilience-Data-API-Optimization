@@ -1,0 +1,8 @@
+# All DAS web processes share one cgroup slice, so the rest of the Master Node
+# (RF control, alarm handling) keeps its CPU and memory no matter what the web does.
+[Unit]
+Description=DAS web stack slice
+
+[Slice]
+CPUWeight=100
+MemoryMax=512M

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DAS gateway</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;color:#1b1b1b}code{background:#f2f2f0;padding:1px 5px;border-radius:4px}</style></head>
+<body>
+<h1>DAS Master Node gateway</h1>
+<p>nginx is serving this page and routing <code>/api/*</code> to three isolated services.
+Build the Angular reference client (<code>das-04-angular-client</code>) and start the stack with
+<code>WEB_ROOT=/path/to/dist/browser sh scripts/run-local.sh</code> to get the real UI here.</p>
+<ul>
+<li><a href="/api/heartbeat">/api/heartbeat</a> (core-api, with service health)</li>
+<li><a href="/api/capabilities">/api/capabilities</a></li>
+<li><a href="/api/volatile-data">/api/volatile-data</a> (telemetry-service, micro-cached)</li>
+<li><a href="/api/spectrum/latest?nodeId=1&amp;port=1&amp;maxPoints=800">/api/spectrum/latest</a> (spectrum-service)</li>
+<li><a href="/api/metrics">/api/metrics</a> (aggregated)</li>
+</ul>
+</body></html>

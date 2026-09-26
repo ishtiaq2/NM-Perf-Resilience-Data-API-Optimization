@@ -1,0 +1,8 @@
+# Starts/stops the whole DAS web stack together:  systemctl start das.target
+[Unit]
+Description=DAS Master Node web stack (gateway + services)
+Wants=das-gateway.service das-core-api.service das-telemetry.service das-spectrum.service
+After=network.target
+
+[Install]
+WantedBy=multi-user.target

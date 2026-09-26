@@ -1,0 +1,38 @@
+[Unit]
+Description=DAS spectrum service (heavy analyzer data)
+PartOf=das.target
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+Slice=das.slice
+User=das
+Group=das
+WorkingDirectory=/opt/das-web
+Environment=NODE_ENV=production
+Environment=UV_THREADPOOL_SIZE=2
+Environment=MALLOC_ARENA_MAX=2
+EnvironmentFile=-/etc/default/das-web
+Restart=always
+RestartSec=1
+# Sandboxing: the services only need their sockets and read-only code.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/run/das
+Environment=LISTEN=unix:/run/das/spectrum.sock
+Environment=NODE_OPTIONS=--max-old-space-size=128
+Environment=DAS_WORKER_NICE=10
+ExecStart=/usr/bin/node services/spectrum-service/server.js
+# Lowest priority and a hard memory cap: it may be slow under load, it may be
+# OOM-killed and restarted, but it can never starve the rest of the device.
+Nice=10
+CPUWeight=50
+MemoryMax=256M
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=das.target
