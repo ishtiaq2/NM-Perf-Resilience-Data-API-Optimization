@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package das.v1;
+
+import "das/v1/common.proto";
+
+option go_package = "das/edge/gen/das/v1;dasv1";
+
+// Remote Node -> Master Node telemetry over the fiber link (node-to-node sharing).
+//
+// Each Remote Node keeps ONE long-lived bidirectional stream (HTTP/2 multiplexing,
+// flow control, deadlines). A node sends its state only when it changed, as a
+// delta against a state the master confirmed. A hash of the state lets the
+// master detect divergence without comparing the data.
+service NodeIngestService {
+  rpc Report(stream ReportRequest) returns (stream ReportResponse);
+}
+
+// full = true: complete state (first report on a stream, after RESYNC).
+// full = false with changed_paths: delta against the state with hash base_hash.
+// full = false without changed_paths: keep-alive (nothing changed since base_hash).
+message ReportRequest {
+  uint32 node_id = 1;
+  // Monotonic per node; the master acks it.
+  uint64 seq = 2;
+  // Hash of the state AFTER applying this report: FNV-1a 64 over the canonical
+  // JSON encoding of the normalised state (see ../../../ingest-protocol.md).
+  uint64 state_hash = 3;
+  // Hash of the state this delta applies to (ignored when full = true).
+  uint64 base_hash = 4;
+  bool full = 5;
+  // full = true: complete state. full = false: only the fields listed in changed_paths.
+  NodeTelemetry state = 6;
+  // Field paths that changed, with protobuf field names: "temperature_c",
+  // "bands.2.dl_out_dbm" (list index), "metrics.m03" (map key), "alarms" (whole list).
+  // A listed field that is absent from `state` now has its default value.
+  repeated string changed_paths = 7;
+  int64 reported_at_ms = 8;
+}
+
+message ReportResponse {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    // Applied; base for the next delta is state_hash of acked_seq.
+    ACTION_OK = 1;
+    // Master's copy diverged (hash mismatch, master restarted, gap): send full state next.
+    ACTION_RESYNC = 2;
+    // Master is overloaded: report at most every min_interval_ms.
+    ACTION_SLOW_DOWN = 3;
+  }
+  uint32 node_id = 1;
+  uint64 acked_seq = 2;
+  Action action = 3;
+  uint32 min_interval_ms = 4;
+}

@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package das.v1;
+
+import "das/v1/common.proto";
+
+option go_package = "das/edge/gen/das/v1;dasv1";
+
+// Northbound telemetry for tools and automation (NMS, scripts, CLI), modelled
+// on gNMI Subscribe: snapshot, sync marker, then on-change updates.
+// The browser uses the equivalent WebSocket channel (asyncapi.yaml).
+service TelemetryService {
+  rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse);
+}
+
+enum SubscriptionMode {
+  SUBSCRIPTION_MODE_UNSPECIFIED = 0;
+  // Push a delta whenever a node's normalised state changed (default).
+  SUBSCRIPTION_MODE_ON_CHANGE = 1;
+  // Push the full state every sample_interval_ms.
+  SUBSCRIPTION_MODE_SAMPLE = 2;
+}
+
+message SubscribeRequest {
+  // Resume after a reconnect: last revision applied by the client (0 = snapshot).
+  uint64 resume_from_rev = 1;
+  SubscriptionMode mode = 2;
+  uint32 sample_interval_ms = 3;
+  // Empty = all nodes.
+  repeated uint32 node_ids = 4;
+}
+
+message SubscribeResponse {
+  uint64 rev = 1;
+  // Revision this update applies to (0 with full = true).
+  uint64 base = 2;
+  int64 generated_at_ms = 3;
+  // Full state of each changed node (replace, do not merge).
+  repeated NodeTelemetry changed = 4;
+  repeated uint32 removed = 5;
+  // True on the message that completes the initial snapshot.
+  bool sync_response = 6;
+  bool full = 7;
+}
