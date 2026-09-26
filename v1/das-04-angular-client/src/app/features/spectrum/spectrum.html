@@ -1,0 +1,51 @@
+<section class="card panel">
+  <div class="controls">
+    <label class="field"><span>Remote Node</span>
+      <input type="number" min="1" max="999" [value]="nodeId()" (change)="setNode($any($event.target).value)" data-testid="node-input" />
+    </label>
+    <label class="field"><span>Port</span>
+      <select [value]="port()" (change)="setPort($any($event.target).value)">
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+      </select>
+    </label>
+    <label class="field"><span>Ref level</span>
+      <select [value]="refLevel()" (change)="refLevel.set(+$any($event.target).value)">
+        <option value="0">0 dBm</option><option value="-20">−20 dBm</option><option value="-40">−40 dBm</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" [checked]="maxHoldOn()" (change)="maxHoldOn.set($any($event.target).checked)" /> Max hold</label>
+    <button class="btn" type="button" (click)="togglePause()">{{ paused() ? 'Resume' : 'Pause' }}</button>
+    <div class="legend">
+      <span><span class="key k1"></span>Trace</span>
+      @if (maxHoldOn()) { <span><span class="key k2"></span>Max hold</span> }
+    </div>
+  </div>
+
+  <das-spectrum-canvas [trace]="shown()" [hold]="maxHoldOn() ? hold() : null" [refLevel]="refLevel()" (widthPx)="onWidth($event)" />
+
+  <div class="stats muted">
+    <span>Transport <b data-testid="spectrum-transport">{{ feed.transport() }}</b></span>
+    @if (shown(); as t) {
+      <span>Sweep <b class="num" data-testid="sweep-id">#{{ t.sweepId }}</b></span>
+      <span><b class="num">{{ t.power.length }}</b> points{{ t.decimated ? ' (peak-decimated on the server)' : '' }}</span>
+      <span><b class="num">{{ kbPerUpdate().toFixed(1) }}</b> kB per update</span>
+    } @else {
+      <span>waiting for the first sweep…</span>
+    }
+    <span><b class="num">{{ feed.stats().updatesPerSec.toFixed(1) }}</b> updates/s</span>
+  </div>
+</section>
+
+<section class="card panel peaks">
+  <h3>Strongest signals</h3>
+  <table>
+    <thead><tr><th>#</th><th class="r">Frequency (MHz)</th><th class="r">Level (dBm)</th></tr></thead>
+    <tbody>
+      @for (p of peaks(); track $index) {
+        <tr><td>{{ $index + 1 }}</td><td class="num r">{{ p.freqMhz.toFixed(3) }}</td><td class="num r">{{ p.dbm.toFixed(2) }}</td></tr>
+      } @empty {
+        <tr><td colspan="3" class="muted">No trace yet</td></tr>
+      }
+    </tbody>
+  </table>
+</section>

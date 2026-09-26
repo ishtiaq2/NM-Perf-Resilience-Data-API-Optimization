@@ -1,0 +1,25 @@
+:host { display: flex; flex-direction: column; min-height: 100vh; }
+.topbar {
+  display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+  padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 5;
+}
+.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; color: var(--ink); }
+.brand:hover { text-decoration: none; }
+nav { display: flex; gap: 4px; }
+nav a { padding: 6px 12px; border-radius: 8px; color: var(--ink-2); }
+nav a:hover { background: var(--surface-2); text-decoration: none; }
+nav a.active { background: var(--surface-2); color: var(--ink); font-weight: 600; }
+.conn { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; }
+.server { font-size: 12px; }
+.banner { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 20px; border-bottom: 1px solid var(--line); }
+.banner.offline { background: color-mix(in srgb, var(--critical) 12%, var(--surface)); }
+.banner.degraded { background: color-mix(in srgb, var(--warning) 14%, var(--surface)); }
+main { flex: 1; padding: 16px 20px 24px; width: 100%; max-width: 1400px; margin: 0 auto; }
+.statusline { display: flex; gap: 18px; flex-wrap: wrap; padding: 8px 20px; border-top: 1px solid var(--line); background: var(--surface); font-size: 12px; }
+.statusline b { color: var(--ink-2); font-weight: 600; }
+@media (max-width: 640px) {
+  .topbar { gap: 10px; padding: 10px 16px; }
+  .conn { margin-left: 0; }
+  main { padding: 12px 16px; }
+}

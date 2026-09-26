@@ -1,0 +1,40 @@
+<header class="topbar">
+  <a class="brand" routerLink="/dashboard">
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3v18M6.5 7.5a8 8 0 0 0 0 9M17.5 7.5a8 8 0 0 1 0 9M3.5 4.5a12 12 0 0 0 0 15M20.5 4.5a12 12 0 0 1 0 15" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+    <span>DAS Master Node</span>
+  </a>
+  <nav>
+    <a routerLink="/dashboard" routerLinkActive="active">Dashboard</a>
+    <a routerLink="/spectrum" routerLinkActive="active">Spectrum analyzer</a>
+  </nav>
+  <div class="conn" data-testid="connection">
+    <das-status [kind]="connKind()" [label]="connLabel()" />
+    @if (server()) { <span class="muted server">{{ server() }}</span> }
+  </div>
+</header>
+
+@if (conn() === 'offline') {
+  <div class="banner offline" role="alert">
+    <das-status kind="critical" label="Connection to the Master Node lost." /> Retrying automatically. The data below may be outdated.
+  </div>
+} @else if (conn() === 'degraded') {
+  <div class="banner degraded" role="status">
+    <das-status kind="warning" label="The Master Node is busy." />
+    @if (unhealthy().length) { Affected: {{ unhealthy().join(', ') }}. } Other views keep working; data may be slightly delayed.
+  </div>
+}
+
+<main>
+  <router-outlet />
+</main>
+
+<footer class="statusline muted" data-testid="statusline">
+  <span>Telemetry: <b data-testid="telemetry-transport">{{ transportLabel() }}</b></span>
+  <span>rev <span class="num">{{ telemetry.state().rev }}</span></span>
+  @if (dataAge() !== null) { <span>updated <span class="num">{{ dataAge() }}</span> s ago</span> }
+  @if (spectrum.transport() !== 'idle') { <span>Spectrum: <b>{{ spectrum.transport() }}</b></span> }
+  @if (caps.legacy()) { <span>legacy backend (no /api/capabilities)</span> }
+  @else if (caps.caps()) { <span>API {{ caps.caps()!.api }} · {{ caps.caps()!.version }}</span> }
+</footer>

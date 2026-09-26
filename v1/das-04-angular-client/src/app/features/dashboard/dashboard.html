@@ -1,0 +1,58 @@
+<section class="tiles">
+  <div class="tile card"><span class="label">Remote Nodes</span><span class="value" data-testid="node-count">{{ summary().total }}</span></div>
+  <div class="tile card"><span class="label"><das-status kind="good" label="Online" /></span><span class="value">{{ summary().online }}</span></div>
+  <div class="tile card"><span class="label"><das-status kind="warning" label="Degraded" /></span><span class="value">{{ summary().degraded }}</span></div>
+  <div class="tile card"><span class="label"><das-status kind="critical" label="Offline" /></span><span class="value">{{ summary().offline }}</span></div>
+  <div class="tile card"><span class="label">Active alarms</span><span class="value">{{ summary().alarms }}</span></div>
+</section>
+
+<section class="card table-card">
+  <div class="filters">
+    <label class="field grow"><span>Search</span>
+      <input type="search" placeholder="Node name, e.g. RN-042" [value]="query()" (input)="query.set($any($event.target).value)" />
+    </label>
+    <label class="field"><span>Status</span>
+      <select [value]="statusFilter()" (change)="statusFilter.set($any($event.target).value)">
+        <option value="all">All</option>
+        <option value="online">Online</option>
+        <option value="degraded">Degraded</option>
+        <option value="offline">Offline</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" [checked]="alarmsOnly()" (change)="alarmsOnly.set($any($event.target).checked)" /> With alarms only</label>
+    <span class="muted count">{{ rows().length }} shown</span>
+  </div>
+
+  @if (loading()) {
+    <p class="muted empty">Waiting for the first telemetry snapshot…</p>
+  } @else {
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th><th>Node</th><th>Chain·Hop</th>
+            <th class="r">Temp °C</th><th class="r">DL out dBm</th><th class="r">UL in dBm</th>
+            <th class="r">Opt. Rx dBm</th><th class="r">VSWR max</th><th>Alarms</th><th class="r">Uptime</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of rows(); track r.id) {
+            <tr [class.changed]="changed().has(r.id)" (click)="open(r.id)" tabindex="0" (keydown.enter)="open(r.id)">
+              <td><das-status [kind]="r.statusKind" [label]="r.status" /></td>
+              <td class="name">{{ r.name }}</td>
+              <td class="num">{{ r.chainHop }}</td>
+              <td class="num r">{{ fmt(r.temp) }}</td>
+              <td class="num r">{{ fmt(r.dlAvg) }}</td>
+              <td class="num r">{{ fmt(r.ulAvg) }}</td>
+              <td class="num r">{{ fmt(r.rx, 2) }}</td>
+              <td class="num r">{{ fmt(r.vswrMax, 2) }}</td>
+              <td>@if (r.alarms) { <das-status [kind]="r.alarmKind" [label]="r.alarmText" /> } @else { <span class="muted">–</span> }</td>
+              <td class="num r">{{ r.uptime }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>
+<p class="muted hint">Rows highlight when the server pushes a change for that node. Only nodes whose state changed beyond its deadband are sent.</p>

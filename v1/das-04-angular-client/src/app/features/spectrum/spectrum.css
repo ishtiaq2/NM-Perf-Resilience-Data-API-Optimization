@@ -1,0 +1,16 @@
+:host { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; align-items: start; }
+.panel { padding: 14px; }
+.controls { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+.controls .field input { width: 90px; }
+.check { display: inline-flex; gap: 6px; align-items: center; color: var(--ink-2); padding-bottom: 6px; }
+.legend { margin-left: auto; display: flex; gap: 14px; color: var(--ink-2); font-size: 12px; padding-bottom: 8px; }
+.key { display: inline-block; width: 16px; height: 2px; vertical-align: middle; margin-right: 6px; }
+.k1 { background: var(--series-1); } .k2 { background: var(--series-2); }
+.stats { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; }
+.stats b { color: var(--ink-2); font-weight: 600; }
+.peaks h3 { margin: 0 0 8px; font-size: 14px; }
+.peaks table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.peaks th { text-align: left; color: var(--ink-2); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.peaks td { padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.peaks .r { text-align: right; }
+@media (max-width: 960px) { :host { grid-template-columns: 1fr; } }

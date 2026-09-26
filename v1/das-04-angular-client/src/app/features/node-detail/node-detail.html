@@ -1,0 +1,78 @@
+<p><a routerLink="/dashboard">← All Remote Nodes</a></p>
+
+@if (node(); as n) {
+  <section class="card head">
+    <h2>{{ n.name }}</h2>
+    <das-status [kind]="statusKind()" [label]="n.status" />
+    <dl>
+      <div><dt>Firmware</dt><dd>{{ n.fw ?? '–' }}</dd></div>
+      <div><dt>Chain · hop</dt><dd class="num">{{ n.chain }} · {{ n.hop }}</dd></div>
+      <div><dt>Temperature</dt><dd class="num">{{ fmt(n.temperatureC) }} °C</dd></div>
+      <div><dt>Fan</dt><dd class="num">{{ n.fanRpm ?? '–' }} rpm</dd></div>
+      <div><dt>PSU</dt><dd class="num">{{ fmt(n.psuVoltageV, 2) }} V</dd></div>
+      <div><dt>Optical Rx / Tx</dt><dd class="num">{{ fmt(n.optical?.rxDbm, 2) }} / {{ fmt(n.optical?.txDbm, 2) }} dBm</dd></div>
+    </dl>
+  </section>
+
+  <div class="grid">
+    <section class="card pad">
+      <h3>RF bands (live)</h3>
+      <table>
+        <thead><tr><th>Band</th><th>Active</th><th class="r">DL out dBm</th><th class="r">UL in dBm</th><th class="r">DL/UL gain dB</th><th class="r">VSWR</th></tr></thead>
+        <tbody>
+          @for (b of n.bands ?? []; track b.name) {
+            <tr>
+              <td>{{ b.name }}</td>
+              <td>{{ b.enabled ? 'yes' : 'no' }}</td>
+              <td class="num r">{{ fmt(b.dlOutDbm) }}</td>
+              <td class="num r">{{ fmt(b.ulInDbm) }}</td>
+              <td class="num r">{{ b.dlGainDb }} / {{ b.ulGainDb }}</td>
+              <td class="num r">{{ fmt(b.vswr, 2) }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      <h3>Alarms</h3>
+      @for (a of n.alarms ?? []; track a.code) {
+        <p><das-status [kind]="a.severity === 'critical' ? 'critical' : a.severity === 'major' ? 'serious' : 'warning'" [label]="a.code + ' (' + a.severity + ')'" /></p>
+      } @empty {
+        <p class="muted">No active alarms.</p>
+      }
+    </section>
+
+    <section class="card pad config">
+      <h3>Configuration <span class="muted num">v{{ version() }}</span></h3>
+      @if (form(); as f) {
+        <label class="field"><span>Name</span><input [value]="f.name" (input)="patch('name', $any($event.target).value)" /></label>
+        <div class="row">
+          <label class="field"><span>DL gain (dB, 0–40)</span><input type="number" [value]="f.dlGainDb" (input)="patch('dlGainDb', +$any($event.target).value)" /></label>
+          <label class="field"><span>UL gain (dB, 0–30)</span><input type="number" [value]="f.ulGainDb" (input)="patch('ulGainDb', +$any($event.target).value)" /></label>
+          <label class="field"><span>Temp alarm (°C)</span><input type="number" [value]="f.tempAlarmC" (input)="patch('tempAlarmC', +$any($event.target).value)" /></label>
+        </div>
+        <fieldset>
+          <legend>Bands enabled</legend>
+          @for (name of bandNames(); track name) {
+            <label class="check"><input type="checkbox" [checked]="f.bandsEnabled[name]" (change)="toggleBand(name, $any($event.target).checked)" /> {{ name }}</label>
+          }
+        </fieldset>
+        <label class="field"><span>Notes</span><textarea rows="2" [value]="f.notes" (input)="patch('notes', $any($event.target).value)"></textarea></label>
+        <div class="actions">
+          <button class="btn primary" type="button" (click)="save()" [disabled]="saving()" data-testid="save-config">Save</button>
+          <button class="btn" type="button" (click)="reload()">Reload</button>
+          <button class="btn link" type="button" (click)="simulateColleague()">Simulate a colleague's edit</button>
+        </div>
+        @if (notice(); as m) {
+          <div class="notice" [class]="m.kind" role="status" data-testid="config-notice">
+            <das-status [kind]="m.kind === 'ok' ? 'good' : m.kind === 'conflict' ? 'warning' : 'critical'" [label]="m.text" />
+            @if (m.errors) { <ul>@for (e of m.errors; track e) { <li>{{ e }}</li> }</ul> }
+          </div>
+        }
+        <p class="muted small">Saves send <code>If-Match</code> with the version you loaded. If a colleague changed this node in the meantime, the Master Node refuses the write (HTTP 412) instead of silently overwriting it.</p>
+      } @else {
+        <p class="muted">Loading configuration…</p>
+      }
+    </section>
+  </div>
+} @else {
+  <p class="muted">Waiting for telemetry of node {{ nodeId() }}…</p>
+}
