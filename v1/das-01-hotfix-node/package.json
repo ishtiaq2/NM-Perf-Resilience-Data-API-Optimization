@@ -1,0 +1,26 @@
+{
+  "name": "das-01-hotfix-node",
+  "version": "1.1.0-hotfix",
+  "private": true,
+  "description": "Hotfix for the shipped DAS Master Node backend: keeps the Node.js event loop free while the spectrum analyzer runs. Zero runtime dependencies, API- and byte-compatible with the shipped frontend.",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=12.16"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "start:legacy": "node src/server.js --legacy",
+    "test": "node --test test/*.test.js",
+    "bench": "node bench/heartbeat-under-load.js",
+    "demo": "node bench/compare.js",
+    "demo:raw": "node bench/compare.js --cpu-slowdown 1",
+    "check:es2019": "node scripts/check-syntax.js",
+    "example:express": "node examples/express-app.js",
+    "conformance": "node conformance/run.js --base http://127.0.0.1:8080"
+  },
+  "devDependencies": {
+    "acorn": "^8.14.0",
+    "express": "^4.21.2"
+  },
+  "license": "UNLICENSED"
+}
