@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DAS edge status</title>
+<style>
+  :root { --bg:#f7f7f5; --panel:#fff; --ink:#1c1c1a; --muted:#6b6b66; --line:#e3e3de; --ok:#1f8a4c; --warn:#b7791f; --bad:#c53030; --off:#9a9a94; --trace:#2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141413; --panel:#1d1d1b; --ink:#ececea; --muted:#9a9a94; --line:#2e2e2b; --trace:#60a5fa; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:1px solid var(--line); background:var(--panel); }
+  h1 { font-size:16px; margin:0; font-weight:600; }
+  h2 { font-size:14px; margin:0 0 10px; font-weight:600; }
+  main { display:grid; gap:16px; padding:16px 20px; grid-template-columns: minmax(0,1fr); max-width:1280px; margin:0 auto; }
+  @media (min-width: 1000px) { main { grid-template-columns: minmax(0,5fr) minmax(0,7fr); } }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; min-width:0; }
+  .pill { display:inline-flex; align-items:center; gap:8px; padding:4px 10px; border-radius:999px; border:1px solid var(--line); font-size:13px; max-width:100%; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--off); flex:none; }
+  .ok .dot { background:var(--ok); } .warn .dot, .degraded .dot { background:var(--warn); } .down .dot { background:var(--bad); }
+  .stats { display:grid; grid-template-columns:repeat(auto-fill, minmax(118px, 1fr)); gap:8px; margin-bottom:12px; }
+  .stat { border:1px solid var(--line); border-radius:8px; padding:6px 9px; }
+  .stat b { display:block; font-size:17px; font-variant-numeric:tabular-nums; }
+  .stat span { color:var(--muted); font-size:12px; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill, 13px); gap:3px; }
+  #grid i { width:13px; height:13px; border-radius:3px; background:var(--ok); transition: outline-color .6s; outline:2px solid transparent; }
+  #grid i.degraded { background:var(--warn); } #grid i.offline { background:var(--off); } #grid i.alarm { background:var(--bad); }
+  #grid i.flash { outline-color: var(--trace); transition:none; }
+  canvas { width:100%; height:300px; display:block; border:1px solid var(--line); border-radius:8px; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:10px; color:var(--muted); }
+  select { font:inherit; padding:3px 6px; border-radius:6px; border:1px solid var(--line); background:var(--panel); color:var(--ink); }
+  footer { max-width:1280px; margin:0 auto; padding:0 20px 24px; color:var(--muted); }
+  a { color:inherit; }
+  code { background:var(--bg); border:1px solid var(--line); padding:0 4px; border-radius:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DAS Master Node · Go edge</h1>
+  <span id="hb" class="pill"><span class="dot"></span><span id="hbText">connecting…</span></span>
+</header>
+<main>
+  <section>
+    <h2>Remote Nodes (WebSocket push: snapshot, then deltas)</h2>
+    <div class="stats">
+      <div class="stat"><b id="sNodes">–</b><span>nodes</span></div>
+      <div class="stat"><b id="sDeg">–</b><span>degraded / offline</span></div>
+      <div class="stat"><b id="sRev">–</b><span>revisions received</span></div>
+      <div class="stat"><b id="sChanged">–</b><span>changed in last delta</span></div>
+      <div class="stat"><b id="sBytes">–</b><span>received (JSON text)</span></div>
+    </div>
+    <div id="grid" aria-label="node status grid"></div>
+  </section>
+  <section>
+    <h2>Spectrum analyzer (WebSocket push, binary DSPC frames)</h2>
+    <div class="row">
+      <label>Node <select id="node"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+      <span id="spInfo">waiting for the first sweep…</span>
+    </div>
+    <canvas id="trace"></canvas>
+  </section>
+</main>
+<footer>
+  <p>The full engineering UI is the Angular client: start the edge with <code>-web path/to/dist/browser</code>.
+  API: <a href="/api/heartbeat">heartbeat</a> · <a href="/api/capabilities">capabilities</a> · <a href="/api/volatile-data">volatile-data</a> ·
+  <a href="/api/spectrum/latest?nodeId=1&amp;port=1&amp;maxPoints=800">spectrum/latest</a> · <a href="/api/metrics">metrics</a> · <a href="/api/metrics?format=prom">metrics (Prometheus)</a></p>
+</footer>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const wsBase = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+const fmtBytes = (n) => n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : (n / 1e3).toFixed(0) + ' kB';
+
+// Heartbeat: a slow answer is "degraded", only three misses in a row are "unreachable".
+let misses = 0;
+async function beat() {
+  try {
+    const r = await fetch('/api/heartbeat', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
+    const j = await r.json();
+    misses = 0;
+    const lag = j.runtime ? `, scheduler lag p99 ${j.runtime.schedLagP99Ms} ms` : '';
+    setPill(j.status === 'ok' ? 'ok' : 'degraded', `${j.status} · ${j.server} ${j.version} · up ${Math.round(j.uptimeS)} s${lag}`);
+  } catch {
+    misses++;
+    setPill(misses >= 3 ? 'down' : 'warn', misses >= 3 ? 'unreachable' : `no answer (${misses}/3)`);
+  }
+}
+function setPill(cls, text) { $('hb').className = 'pill ' + cls; $('hbText').textContent = text; }
+beat();
+setInterval(beat, 2000);
+
+// Telemetry: apply the snapshot, then deltas; resume from the last revision after a reconnect.
+const nodes = new Map();
+const cells = new Map();
+let rev = null, revs = 0, bytes = 0, changed = new Set(), frame = 0;
+function connectTelemetry() {
+  const ws = new WebSocket(wsBase + '/api/ws/telemetry');
+  ws.onopen = () => ws.send(JSON.stringify(rev === null ? { type: 'sub' } : { type: 'sub', rev }));
+  ws.onmessage = (ev) => {
+    bytes += ev.data.length;
+    const m = JSON.parse(ev.data);
+    if (m.type === 'snapshot') {
+      nodes.clear();
+      for (const [id, n] of Object.entries(m.nodes)) nodes.set(id, n);
+      rev = m.rev; revs++; changed = new Set(nodes.keys());
+    } else if (m.type === 'delta') {
+      if (m.base !== rev) { ws.send(JSON.stringify({ type: 'sub' })); return; }
+      for (const [id, n] of Object.entries(m.changed)) { nodes.set(id, n); changed.add(id); }
+      for (const id of m.removed) nodes.delete(String(id));
+      rev = m.rev; revs++; $('sChanged').textContent = Object.keys(m.changed).length;
+    } else return;
+    if (!frame) frame = requestAnimationFrame(render);
+  };
+  ws.onclose = () => setTimeout(connectTelemetry, 2000);
+}
+function render() {
+  frame = 0;
+  let deg = 0, off = 0;
+  const grid = $('grid');
+  for (const [id, n] of nodes) {
+    let c = cells.get(id);
+    if (!c) { c = document.createElement('i'); cells.set(id, c); grid.appendChild(c); }
+    if (n.status === 'degraded') deg++;
+    if (n.status === 'offline') off++;
+    if (changed.has(id)) {
+      c.className = (n.status === 'online' ? '' : n.status) + (n.alarms && n.alarms.length && n.status !== 'offline' ? ' alarm' : '') + ' flash';
+      c.title = `${n.name}: ${n.status}, ${n.temperatureC} °C, ${(n.alarms || []).map((a) => a.code).join(', ') || 'no alarms'}`;
+      requestAnimationFrame(() => requestAnimationFrame(() => c.classList.remove('flash')));
+    }
+  }
+  for (const [id, c] of cells) if (!nodes.has(id)) { c.remove(); cells.delete(id); }
+  changed.clear();
+  $('sNodes').textContent = nodes.size;
+  $('sDeg').textContent = `${deg} / ${off}`;
+  $('sRev').textContent = revs;
+  $('sBytes').textContent = fmtBytes(bytes);
+}
+connectTelemetry();
+
+// Spectrum: one binary frame per sweep, decimated by the server to the canvas width.
+const canvas = $('trace');
+const ctx = canvas.getContext('2d');
+let sws = null, frames = 0, first = 0;
+function decode(ab) {
+  const dv = new DataView(ab);
+  if (ab.byteLength < 48 || dv.getUint32(0, true) !== 0x43505344) throw new Error('not a DSPC frame');
+  const enc = dv.getUint8(5), count = dv.getUint32(20, true);
+  const power = enc === 1 ? Float32Array.from(new Int16Array(ab, 48, count), (v) => (v === -32768 ? NaN : v / 100)) : new Float32Array(ab, 48, count);
+  return { sweepId: dv.getUint32(8, true), nodeId: dv.getUint32(12, true), count, startHz: dv.getFloat64(24, true), stepHz: dv.getFloat64(32, true), decimated: (dv.getUint16(6, true) & 1) === 1, power, bytes: ab.byteLength };
+}
+function draw(f) {
+  const w = canvas.width, h = canvas.height, lo = -110, hi = -40;
+  const css = getComputedStyle(document.documentElement);
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = css.getPropertyValue('--line');
+  ctx.fillStyle = css.getPropertyValue('--muted');
+  ctx.font = `${11 * devicePixelRatio}px system-ui`;
+  ctx.lineWidth = 1;
+  for (let d = lo; d <= hi; d += 10) {
+    const y = h - ((d - lo) / (hi - lo)) * h;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    ctx.fillText(`${d} dBm`, 4, y - 3);
+  }
+  ctx.strokeStyle = css.getPropertyValue('--trace');
+  ctx.lineWidth = devicePixelRatio;
+  ctx.beginPath();
+  let pen = false;
+  for (let i = 0; i < f.count; i++) {
+    const v = f.power[i];
+    if (Number.isNaN(v)) { pen = false; continue; }
+    const x = (i / Math.max(1, f.count - 1)) * w, y = h - ((Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * h;
+    if (pen) ctx.lineTo(x, y); else { ctx.moveTo(x, y); pen = true; }
+  }
+  ctx.stroke();
+  frames++;
+  const secs = (performance.now() - first) / 1000;
+  const mhz = (hz) => (hz / 1e6).toFixed(0);
+  $('spInfo').textContent = `sweep ${f.sweepId} · ${f.count} points${f.decimated ? ' (peak-decimated)' : ''} · ${mhz(f.startHz)}–${mhz(f.startHz + f.stepHz * (f.count - 1))} MHz · ${fmtBytes(f.bytes)}/frame · ${(frames / Math.max(secs, 1)).toFixed(1)} frames/s`;
+}
+function sizeCanvas() { canvas.width = Math.round(canvas.clientWidth * devicePixelRatio); canvas.height = Math.round(canvas.clientHeight * devicePixelRatio); }
+function subscribe() {
+  if (sws && sws.readyState === WebSocket.OPEN) {
+    frames = 0; first = performance.now();
+    sws.send(JSON.stringify({ type: 'sub', nodeId: Number($('node').value), port: 1, maxPoints: canvas.width }));
+  }
+}
+function connectSpectrum() {
+  sws = new WebSocket(wsBase + '/api/ws/spectrum');
+  sws.binaryType = 'arraybuffer';
+  sws.onopen = subscribe;
+  sws.onmessage = (ev) => { if (typeof ev.data !== 'string') draw(decode(ev.data)); };
+  sws.onclose = () => setTimeout(connectSpectrum, 2000);
+}
+sizeCanvas();
+let resizeTimer = 0;
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { sizeCanvas(); subscribe(); }, 250); });
+$('node').addEventListener('change', subscribe);
+connectSpectrum();
+</script>
+</body>
+</html>
