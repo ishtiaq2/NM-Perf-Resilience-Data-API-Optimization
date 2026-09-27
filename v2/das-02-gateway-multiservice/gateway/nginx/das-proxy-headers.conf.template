@@ -1,0 +1,5 @@
+# Common upstream headers (included wherever a location sets its own headers).
+proxy_set_header Connection "";                 # keep-alive to the upstream service
+proxy_set_header Host $http_host;               # services compare the WebSocket Origin with this
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;

@@ -1,0 +1,100 @@
+# Routing table: one origin, many backends. Included by the HTTP and HTTPS servers.
+
+root @@WEB_ROOT@@;
+index index.html;
+
+# NOTE: nginx drops ALL inherited proxy_set_header directives in a location that
+# sets any of its own. Every location that needs an extra header therefore
+# includes the common set again (das-proxy-headers.conf).
+proxy_http_version 1.1;
+include @@PROXY_HEADERS_FILE@@;
+proxy_connect_timeout 2s;
+
+add_header X-Content-Type-Options nosniff always;
+add_header X-Frame-Options SAMEORIGIN always;
+add_header Referrer-Policy same-origin always;
+
+# ---------------------------------------------------------------- Angular app
+location / {
+    try_files $uri $uri/ /index.html;           # client-side routes
+    gzip_static on;                             # serves main.js.gz etc. if present (no CPU per request)
+}
+location = /index.html {
+    add_header Cache-Control "no-cache" always; # new releases are picked up immediately
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+}
+location ~* \.(?:js|css|woff2?|ttf|svg|png|jpg|ico)$ {
+    expires 1y;                                 # Angular emits content-hashed file names
+    add_header Cache-Control "public, immutable" always;
+    gzip_static on;
+    try_files $uri =404;
+}
+
+# ------------------------------------------------------------------ heartbeat
+location = /api/heartbeat {
+    proxy_pass http://core_api;
+    proxy_read_timeout 3s;
+    proxy_next_upstream off;
+    error_page 502 503 504 = @heartbeat_fallback;
+}
+# The device is reachable even while core-api restarts: say "degraded", not "dead".
+location @heartbeat_fallback {
+    default_type application/json;
+    add_header Cache-Control "no-store" always;
+    return 200 '{"status":"degraded","server":"das-gateway","services":{"core-api":"down"}}';
+}
+
+# -------------------------------------------------------------- volatile data
+location = /api/volatile-data {
+    proxy_pass http://telemetry;
+    proxy_cache microcache;
+    proxy_cache_key $request_uri;               # includes ?since=
+    proxy_cache_valid 200 1s;
+    proxy_ignore_headers Cache-Control Expires; # the service says no-cache to BROWSERS; the gateway may hold it 1 s
+    proxy_cache_lock on;
+    proxy_cache_lock_timeout 2s;
+    proxy_cache_use_stale updating error timeout;
+    proxy_cache_background_update on;
+    include @@PROXY_HEADERS_FILE@@;
+    proxy_set_header Accept-Encoding gzip;      # cache one (gzip) variant ...
+    gunzip on;                                  # ... and decompress for the rare client without gzip
+    add_header X-Cache-Status $upstream_cache_status always;
+}
+location = /api/ws/telemetry {
+    proxy_pass http://telemetry;
+    include @@WS_HEADERS_FILE@@;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+    proxy_buffering off;
+}
+
+# ------------------------------------------------------------------- spectrum
+location /api/spectrum {
+    proxy_pass http://spectrum;
+    limit_req zone=spectrum_per_ip burst=40 nodelay;
+    proxy_read_timeout 15s;                     # long-poll waits up to 10 s
+    # nginx reads the whole response from the service at local speed and feeds slow
+    # browsers itself, so the Node process never holds data for a slow client.
+    proxy_buffering on;
+    proxy_buffers 16 64k;
+    proxy_busy_buffers_size 128k;
+}
+location = /api/ws/spectrum {
+    proxy_pass http://spectrum;
+    include @@WS_HEADERS_FILE@@;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+    proxy_buffering off;
+}
+
+# ---------------------------------------------------- everything else: core-api
+location /api/ {
+    proxy_pass http://core_api;
+    proxy_read_timeout 30s;
+}
+
+# Internal health/metrics/debug endpoints are never exposed through the gateway.
+location /internal/ {
+    return 404;
+}
