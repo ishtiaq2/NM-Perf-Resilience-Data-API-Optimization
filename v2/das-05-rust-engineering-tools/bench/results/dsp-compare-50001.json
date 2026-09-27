@@ -1,0 +1,62 @@
+{
+  "measured": "2026-09-26T23:05:34.519Z",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+  "node": "v22.22.2",
+  "points": 50001,
+  "legacyByteIdentical": true,
+  "rows": [
+    {
+      "op": "parse raw FPGA sweep (50001 pts, 97 kB)",
+      "nodeMs": 0.497,
+      "rustMs": 0.023,
+      "ratio": 21.6
+    },
+    {
+      "op": "legacy JSON (shipped frontend shape)",
+      "nodeMs": 20.395,
+      "rustMs": 2.231,
+      "ratio": 9.1
+    },
+    {
+      "op": "compact JSON (/api/spectrum/latest)",
+      "nodeMs": 10.541,
+      "rustMs": 1.405,
+      "ratio": 7.5
+    },
+    {
+      "op": "DSPC binary frame (i16 centi-dBm)",
+      "nodeMs": 0.6,
+      "rustMs": 0.319,
+      "ratio": 1.9
+    },
+    {
+      "op": "peak-hold decimation to 1024 px",
+      "nodeMs": 0.151,
+      "rustMs": 0.037,
+      "ratio": 4.1
+    },
+    {
+      "op": "gzip (fast) of the legacy JSON",
+      "nodeMs": 8.61,
+      "rustMs": 7.309,
+      "ratio": 1.2
+    }
+  ],
+  "rustOnly": [
+    {
+      "bytes": 16384,
+      "ms": 0.384,
+      "op": "DTF 1024 pts (Kaiser, 4 events)"
+    },
+    {
+      "bytes": 16384,
+      "ms": 1.27,
+      "op": "DTF 4096 pts (Kaiser, 4 events)"
+    },
+    {
+      "bytes": 16384,
+      "ms": 4.686,
+      "op": "DTF 16001 pts (Kaiser, 4 events)"
+    }
+  ]
+}

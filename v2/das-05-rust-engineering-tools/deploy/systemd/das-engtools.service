@@ -1,0 +1,56 @@
+[Unit]
+Description=DAS engineering tools (Rust): spectrum analyzer and distance-to-fault
+Documentation=file:///opt/das-engtools/README.md
+# In the das-02 gateway stack it replaces the Node.js spectrum service.
+PartOf=das.target
+Conflicts=das-spectrum.service
+After=network.target das-core-api.service
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+# READY=1 once the listener is bound; the watchdog is fed only while a real
+# GET /internal/health through that listener succeeds, so a wedged process is restarted.
+Type=notify
+NotifyAccess=main
+WatchdogSec=10
+Restart=always
+RestartSec=1
+TimeoutStopSec=10
+
+Slice=das.slice
+User=das
+Group=das
+EnvironmentFile=-/etc/default/das-engtools
+ExecStart=/opt/das-engtools/das-engtools
+
+# No garbage collector and no JIT: steady-state memory is about 15-20 MB (see
+# docs/BENCHMARKS.md). The cap only protects the rest of the Master Unit from a bug.
+MemoryMax=96M
+# Request threads run at normal priority; the DSP threads renice themselves to +10
+# (DAS_DSP_NICE), so parsing and encoding never compete with the heartbeat path.
+CPUWeight=100
+
+# Sandboxing: sockets, the network, nothing else.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+# The real analyzer adapter may need its device node (e.g. /dev/uio0): then replace
+# PrivateDevices=yes with DevicePolicy=closed + DeviceAllow=/dev/uio0 rw.
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+ReadWritePaths=-/run/das
+# Front mode on port 80 without root:
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=das.target
