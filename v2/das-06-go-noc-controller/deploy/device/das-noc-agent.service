@@ -1,0 +1,42 @@
+# The NOC uplink on the Master Unit: agent/noc-agent.js next to the existing
+# Node.js backend. It only makes OUTBOUND connections (the local API on
+# loopback, the NOC over wss://); no port is opened at the venue.
+#   install -m 0644 agent/noc-agent.js /opt/das-noc-agent/noc-agent.js
+#   install -m 0600 deploy/device/das-noc-agent.env /etc/default/das-noc-agent
+#   systemctl enable --now das-noc-agent.service
+[Unit]
+Description=DAS NOC uplink agent (reports this Master Unit to the NOC)
+PartOf=das.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=das
+Group=das
+EnvironmentFile=/etc/default/das-noc-agent
+ExecStart=/usr/bin/node /opt/das-noc-agent/noc-agent.js
+Restart=always
+RestartSec=5
+# Background work: the UI heartbeat path of the backend always comes first.
+Nice=10
+CPUWeight=20
+MemoryMax=64M
+Environment=NODE_OPTIONS=--max-old-space-size=32
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+# AF_NETLINK/AF_UNIX: getaddrinfo() (the NOC's hostname) may need them.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=das.target

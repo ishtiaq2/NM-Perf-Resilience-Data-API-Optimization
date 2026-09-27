@@ -1,0 +1,116 @@
+# ONE replica per fleet shard, replaced with Recreate: two instances behind one
+# hostname would each hold part of the fleet. A restart costs a reconnect of the
+# whole fleet (measured: 5 000 Master Units back in 32 s, docs/SCALE.md); larger
+# fleets are split into shards by region or customer (docs/OPERATIONS.md).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: das-noc
+  namespace: das-noc
+  labels:
+    app.kubernetes.io/name: das-noc
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: das-noc
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: das-noc
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: /metrics
+    spec:
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: noc
+          image: registry.example.com/das-noc:0.6.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: public
+              containerPort: 8080
+            - name: internal
+              containerPort: 9090
+          env:
+            - name: DAS_NOC_LISTEN
+              value: ":8080"
+            - name: DAS_NOC_INTERNAL_LISTEN
+              value: ":9090"
+            - name: DAS_NOC_DATA_DIR
+              value: /data
+            - name: DAS_NOC_LOG
+              value: json
+            - name: DAS_NOC_SECRET_FILE
+              value: /var/run/das-noc/secret/current
+            - name: DAS_NOC_SECRET_PREV_FILE # optional key: ignored when absent
+              value: /var/run/das-noc/secret/previous
+            - name: DAS_NOC_INVENTORY
+              value: /etc/das-noc/inventory.json
+            - name: DAS_NOC_REVOKED_FILE
+              value: /etc/das-noc/revoked.txt
+            - name: DAS_NOC_ADMIT_RATE # device handshakes per second after a restart
+              value: "200"
+            # The Go heap target below the container limit: the GC works harder
+            # instead of the pod being OOM-killed (5 000 sites: ~127 MB RSS in
+            # steady state, ~200 MB in an alarm storm; 10 000 sites: ~232 MB).
+            - name: GOMEMLIMIT
+              value: 400MiB
+            # Go 1.24 does not read the cgroup CPU quota; match GOMAXPROCS to the
+            # request (no CPU limit is set, to avoid CFS throttling latency).
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  resource: requests.cpu
+                  divisor: "1"
+          resources:
+            requests:
+              cpu: "1"
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: internal
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: internal
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: secret
+              mountPath: /var/run/das-noc/secret
+              readOnly: true
+            - name: config # the directory, not subPath: subPath mounts never see updates
+              mountPath: /etc/das-noc
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: das-noc-data
+        - name: secret
+          secret:
+            secretName: das-noc-secret
+        - name: config
+          configMap:
+            name: das-noc-config

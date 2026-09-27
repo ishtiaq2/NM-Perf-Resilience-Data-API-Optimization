@@ -1,0 +1,32 @@
+# TLS terminates here (ingress-nginx shown; any controller with long-lived
+# WebSocket support works). Every Master Unit holds one WebSocket open for days:
+# the read/send timeouts must exceed the NOC's 25 s keep-alive by a wide margin,
+# and the controller must allow one connection per site (plus dashboards).
+# Client certificates for devices (mTLS) are configured here too; see
+# docs/OPERATIONS.md.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: das-noc
+  namespace: das-noc
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    # cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["noc.example.com"]
+      secretName: das-noc-tls
+  rules:
+    - host: noc.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: das-noc
+                port:
+                  name: http

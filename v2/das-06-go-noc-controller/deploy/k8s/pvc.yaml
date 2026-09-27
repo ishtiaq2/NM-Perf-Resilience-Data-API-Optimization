@@ -1,0 +1,12 @@
+# The site registry (known sites, last seen, alarm acknowledgements). Small:
+# about 200 bytes per site. Live state is NOT kept here; the devices resend it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: das-noc-data
+  namespace: das-noc
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi

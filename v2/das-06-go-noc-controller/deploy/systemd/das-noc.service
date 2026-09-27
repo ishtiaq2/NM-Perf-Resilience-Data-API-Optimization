@@ -1,0 +1,47 @@
+# The NOC on a VM or bare metal (the Kubernetes manifests are in deploy/k8s).
+#   install -m 0755 dist/noc-linux-amd64 /usr/local/bin/das-noc
+#   install -d -o das-noc -g das-noc -m 0750 /var/lib/das-noc
+#   install -m 0600 -o das-noc secret /etc/das-noc/secret
+#   systemctl enable --now das-noc.service
+# TLS: put a reverse proxy in front (docs/OPERATIONS.md) or set DAS_NOC_TLS_CERT/_KEY.
+[Unit]
+Description=DAS NOC fleet controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=das-noc
+Group=das-noc
+Environment=DAS_NOC_LISTEN=:8080
+Environment=DAS_NOC_INTERNAL_LISTEN=127.0.0.1:9090
+Environment=DAS_NOC_DATA_DIR=/var/lib/das-noc
+Environment=DAS_NOC_SECRET_FILE=/etc/das-noc/secret
+Environment=DAS_NOC_LOG=json
+Environment=GOMEMLIMIT=400MiB
+EnvironmentFile=-/etc/default/das-noc
+ExecStart=/usr/local/bin/das-noc
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=2
+# 5 000 devices + dashboards = more than the default 1 024 descriptors.
+LimitNOFILE=65536
+MemoryMax=512M
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/var/lib/das-noc
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

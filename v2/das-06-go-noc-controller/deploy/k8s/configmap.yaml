@@ -1,0 +1,19 @@
+# inventory.json: the sites the NOC must know about even before they connect
+# (a site that never dials in shows as offline instead of being invisible).
+# revoked.txt: token subjects refused from now on. The NOC re-reads it within
+# ~10 s of a change (ConfigMap updates reach the pod in about a minute) and
+# closes the connections of revoked devices and users at once.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: das-noc-config
+  namespace: das-noc
+data:
+  inventory.json: |
+    [
+      {"id": "S00001", "tenant": "airport-01", "name": "Terminal 1", "venue": "Airport North", "region": "north"},
+      {"id": "S00002", "tenant": "airport-01", "name": "Terminal 2", "venue": "Airport North", "region": "north"},
+      {"id": "S00003", "tenant": "stadium-01", "name": "Main Stand", "venue": "City Stadium", "region": "central"}
+    ]
+  revoked.txt: |
+    # one per line: site:<id> or user:<name>

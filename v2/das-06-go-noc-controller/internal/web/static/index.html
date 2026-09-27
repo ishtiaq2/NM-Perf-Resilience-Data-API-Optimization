@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DAS NOC</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo" aria-hidden="true"></span><h1>DAS NOC</h1><span id="scope" class="scope"></span></div>
+  <div id="conn" class="conn off" title="dashboard connection">offline</div>
+</header>
+
+<section id="login" hidden>
+  <form id="login-form">
+    <label for="token">User token</label>
+    <input id="token" autocomplete="off" spellcheck="false" placeholder="v1.user.…">
+    <button type="submit">Open</button>
+    <p class="hint">Tokens come from <code>noc token -kind user -subject &lt;name&gt; -tenant &lt;tenant|*&gt;</code>, or start the NOC with <code>-demo</code>.</p>
+  </form>
+</section>
+
+<main id="app" hidden>
+  <section class="tiles" aria-label="Fleet">
+    <div class="tile"><span class="n" id="t-sites">–</span><span class="l">sites</span></div>
+    <div class="tile"><span class="n" id="t-connected">–</span><span class="l">connected</span></div>
+    <div class="tile s-critical"><span class="n" id="t-critical">–</span><span class="l">critical</span></div>
+    <div class="tile s-offline"><span class="n" id="t-offline">–</span><span class="l">offline</span></div>
+    <div class="tile s-major"><span class="n" id="t-major">–</span><span class="l">major</span></div>
+    <div class="tile s-stale"><span class="n" id="t-stale">–</span><span class="l">stale</span></div>
+    <div class="tile s-minor"><span class="n" id="t-minor">–</span><span class="l">minor</span></div>
+    <div class="tile s-ok"><span class="n" id="t-ok">–</span><span class="l">ok</span></div>
+    <div class="tile wide"><span class="n" id="t-alarms">–</span><span class="l">active alarms <span id="t-acked"></span></span></div>
+  </section>
+
+  <div class="grid">
+    <section class="panel" aria-label="Problem sites">
+      <div class="panel-h"><h2>Needs attention</h2><input id="search" type="search" placeholder="Find a site…" aria-label="Find a site"></div>
+      <table class="sites"><thead><tr><th>Site</th><th>Status</th><th>Alarms</th><th>Since</th></tr></thead><tbody id="problems"></tbody></table>
+      <div id="tenants-wrap" hidden>
+        <h3>By customer</h3>
+        <table class="tenants"><thead><tr><th>Customer</th><th>Sites</th><th>Connected</th><th>Critical</th><th>Offline</th><th>Alarms</th></tr></thead><tbody id="tenants"></tbody></table>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="Alarm feed">
+      <div class="panel-h"><h2>Live alarms</h2><span id="feed-rate" class="muted"></span></div>
+      <ol id="feed" class="feed"></ol>
+    </section>
+
+    <section class="panel detail" aria-label="Site detail">
+      <div class="panel-h"><h2 id="d-title">Select a site</h2><span id="d-status"></span></div>
+      <div id="d-body" class="muted">Click a site to drill down: summary, active alarms and the Remote Node table, streamed from its Master Unit while this panel is open.</div>
+    </section>
+  </div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

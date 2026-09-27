@@ -1,0 +1,5 @@
+# Token subjects the NOC refuses (re-read on change and on SIGHUP).
+# A Master Unit that was stolen or replaced:
+#   site:S00042
+# Someone who left:
+#   user:j.smith

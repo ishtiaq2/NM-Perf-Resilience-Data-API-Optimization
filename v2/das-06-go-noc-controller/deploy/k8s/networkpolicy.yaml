@@ -1,0 +1,27 @@
+# Only the ingress controller reaches the public port; only Prometheus (the
+# monitoring namespace) reaches the internal port. Kubelet probes are not
+# affected by NetworkPolicy with the common CNIs. Adjust the namespace labels
+# to your cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: das-noc
+  namespace: das-noc
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: das-noc
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 9090

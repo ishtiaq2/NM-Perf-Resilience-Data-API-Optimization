@@ -1,0 +1,27 @@
+# Two services: the public one is what the ingress routes to; the internal one
+# (metrics, health, pprof) is for Prometheus and operators inside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: das-noc
+  namespace: das-noc
+spec:
+  selector:
+    app.kubernetes.io/name: das-noc
+  ports:
+    - name: http
+      port: 80
+      targetPort: public
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: das-noc-internal
+  namespace: das-noc
+spec:
+  selector:
+    app.kubernetes.io/name: das-noc
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: internal

@@ -1,0 +1,5 @@
+[
+  {"id": "S00001", "tenant": "airport-01", "name": "Terminal 1", "venue": "Airport North", "region": "north"},
+  {"id": "S00002", "tenant": "airport-01", "name": "Terminal 2", "venue": "Airport North", "region": "north"},
+  {"id": "S00003", "tenant": "stadium-01", "name": "Main Stand", "venue": "City Stadium", "region": "central"}
+]

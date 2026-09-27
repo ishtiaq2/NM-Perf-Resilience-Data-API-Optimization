@@ -1,0 +1,15 @@
+# kubectl apply -k deploy/k8s   (after creating the real secret, see secret.example.yaml)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: das-noc
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - networkpolicy.yaml
+images:
+  - name: registry.example.com/das-noc
+    newTag: 0.6.0
