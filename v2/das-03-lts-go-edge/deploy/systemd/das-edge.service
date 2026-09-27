@@ -1,0 +1,52 @@
+[Unit]
+Description=DAS edge server (Go): web UI, REST, WebSocket push, Remote Node ingest
+Documentation=file:///opt/das-edge/README.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+# READY=1 once the listeners are bound; the watchdog is fed only while a real
+# GET /api/heartbeat through the listener succeeds, so a wedged process is restarted.
+Type=notify
+NotifyAccess=main
+WatchdogSec=10
+Restart=always
+RestartSec=1
+TimeoutStopSec=10
+
+User=das
+Group=das
+EnvironmentFile=-/etc/default/das-edge
+ExecStart=/opt/das-edge/das-edge
+
+# Memory: the Go GC works towards GOMEMLIMIT (soft), the kernel enforces MemoryMax (hard).
+Environment=GOMEMLIMIT=96MiB
+MemoryMax=160M
+# Request handling first; encoding/compression threads renice themselves to +10.
+Nice=-5
+CPUWeight=400
+
+# Sandboxing: needs its sockets, the UI files (read-only) and the network.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RuntimeDirectory=das-edge
+RuntimeDirectoryMode=0750
+# Port 443 without root:
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
