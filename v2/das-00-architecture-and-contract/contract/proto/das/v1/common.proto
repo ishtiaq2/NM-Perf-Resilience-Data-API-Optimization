@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package das.v1;
+
+option go_package = "das/edge/gen/das/v1;dasv1";
+
+// Health of a Remote Node as seen by the Master Node.
+enum NodeStatus {
+  NODE_STATUS_UNSPECIFIED = 0;
+  NODE_STATUS_ONLINE = 1;
+  NODE_STATUS_DEGRADED = 2;
+  NODE_STATUS_OFFLINE = 3;
+}
+
+enum AlarmSeverity {
+  ALARM_SEVERITY_UNSPECIFIED = 0;
+  ALARM_SEVERITY_MINOR = 1;
+  ALARM_SEVERITY_MAJOR = 2;
+  ALARM_SEVERITY_CRITICAL = 3;
+}
+
+message Alarm {
+  string code = 1;
+  AlarmSeverity severity = 2;
+  int64 since_ms = 3;
+}
+
+message Optical {
+  float rx_dbm = 1;
+  float tx_dbm = 2;
+  float laser_bias_ma = 3;
+}
+
+message Band {
+  string name = 1;
+  bool enabled = 2;
+  float dl_out_dbm = 3;
+  float ul_in_dbm = 4;
+  float dl_gain_db = 5;
+  float ul_gain_db = 6;
+  float vswr = 7;
+}
+
+// Normalised state of one Remote Node (what the Master Node publishes).
+// Per-report counters (sequence numbers, report timestamps, uptime) are NOT
+// part of the state: they would make every report look like a change.
+message NodeTelemetry {
+  uint32 id = 1;
+  string name = 2;
+  NodeStatus status = 3;
+  string fw = 4;
+  // Boot time (epoch ms) instead of an ever-changing uptime counter. Derived from
+  // a truncated uptime it jitters by up to 1 s; receivers apply a 10 s deadband.
+  int64 boot_at_ms = 5;
+  float temperature_c = 6;
+  uint32 fan_rpm = 7;
+  float psu_voltage_v = 8;
+  Optical optical = 9;
+  repeated Band bands = 10;
+  map<string, float> metrics = 11;
+  repeated Alarm alarms = 12;
+  uint32 chain = 13;
+  uint32 hop = 14;
+}

@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package das.v1;
+
+option go_package = "das/edge/gen/das/v1;dasv1";
+
+// Configuration of Remote Nodes with optimistic concurrency: a write carries the
+// version it was based on and fails with FAILED_PRECONDITION if someone else changed the node.
+service ConfigService {
+  rpc GetNodeConfig(GetNodeConfigRequest) returns (GetNodeConfigResponse);
+  rpc UpdateNodeConfig(UpdateNodeConfigRequest) returns (UpdateNodeConfigResponse);
+}
+
+message NodeConfig {
+  string name = 1;
+  float dl_gain_db = 2;
+  float ul_gain_db = 3;
+  map<string, bool> bands_enabled = 4;
+  float temp_alarm_c = 5;
+  string notes = 6;
+}
+
+message GetNodeConfigRequest {
+  uint32 node_id = 1;
+}
+
+message GetNodeConfigResponse {
+  uint32 node_id = 1;
+  uint64 version = 2;
+  int64 updated_at_ms = 3;
+  NodeConfig config = 4;
+}
+
+message UpdateNodeConfigRequest {
+  uint32 node_id = 1;
+  // Version the change is based on (0 = unconditional, legacy behaviour).
+  uint64 expected_version = 2;
+  NodeConfig config = 3;
+}
+
+message UpdateNodeConfigResponse {
+  uint32 node_id = 1;
+  uint64 version = 2;
+  int64 updated_at_ms = 3;
+  NodeConfig config = 4;
+}

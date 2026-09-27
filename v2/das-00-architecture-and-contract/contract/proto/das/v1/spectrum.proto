@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package das.v1;
+
+option go_package = "das/edge/gen/das/v1;dasv1";
+
+// Spectrum analyzer stream for tools and internal services. Browsers use the
+// binary WebSocket channel (same payload layout, see spectrum-binary-frame.md).
+service SpectrumService {
+  rpc StreamSweeps(StreamSweepsRequest) returns (stream StreamSweepsResponse);
+}
+
+message StreamSweepsRequest {
+  uint32 node_id = 1;
+  uint32 port = 2;
+  double start_hz = 3;
+  double stop_hz = 4;
+  uint32 points = 5;
+  // Peak-detector decimation (0 = full resolution).
+  uint32 max_points = 6;
+}
+
+message StreamSweepsResponse {
+  uint32 sweep_id = 1;
+  uint32 node_id = 2;
+  uint32 port = 3;
+  double start_hz = 4;
+  double step_hz = 5;
+  int64 timestamp_ms = 6;
+  bool decimated = 7;
+  // Little-endian int16 values in centi-dBm; -32768 = no data.
+  bytes power_centi_dbm = 8;
+}

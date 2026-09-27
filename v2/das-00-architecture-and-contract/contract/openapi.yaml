@@ -1,0 +1,577 @@
+openapi: 3.1.0
+info:
+  title: DAS Master Node Web API
+  version: 1.2.0
+  summary: One contract, several implementations (Node hotfix, gateway + services, Go edge, Rust engineering tools).
+  description: |
+    The single HTTP API the Angular frontend talks to. Every backend in this
+    programme implements this contract behind the **same origin**, so the frontend
+    never knows (or cares) which process or language answers a request.
+
+    Compatibility rules:
+    * Existing endpoints keep their URL, shape and semantics (`/api/spectrum`,
+      `/api/volatile-data`, `/api/heartbeat`, `/api/nodes/{id}/config`).
+    * New behaviour is **opt-in** (new endpoints, new query parameters, `Accept`
+      negotiation) and discoverable via `GET /api/capabilities`.
+    * A frontend that gets `404` from `/api/capabilities` is talking to a legacy
+      backend and must fall back to plain polling.
+
+    Push transports (WebSocket) are described in `asyncapi.yaml`; the binary
+    spectrum frame in `spectrum-binary-frame.md`; internal gRPC services in `proto/`.
+servers:
+  - url: /
+    description: Same origin as the Angular application (served by the device)
+security:
+  - deviceSession: []
+tags:
+  - name: health
+    description: Liveness of the Master Node web backend
+  - name: telemetry
+    description: Remote Node telemetry merged on the Master Node (volatile_data)
+  - name: spectrum
+    description: Spectrum Analyzer (Engineering Tools)
+  - name: dtf
+    description: Distance-to-Fault (Engineering Tools); served by das-05 (Rust)
+  - name: configuration
+    description: Remote Node configuration with optimistic concurrency
+  - name: meta
+    description: Capability discovery and operational metrics
+paths:
+  /api/heartbeat:
+    get:
+      tags: [health]
+      operationId: getHeartbeat
+      summary: Liveness + event-loop health. Must answer in < 100 ms (p99) under load.
+      description: |
+        Never cached (`Cache-Control: no-store`). `status: degraded` means "alive
+        but busy" and must not be treated as "server is dead" by clients.
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: Server is alive
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Heartbeat' }
+  /api/capabilities:
+    get:
+      tags: [meta]
+      operationId: getCapabilities
+      summary: Feature discovery for progressive enhancement
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: Supported opt-in features
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Capabilities' }
+        '404':
+          description: Legacy backend (shipped release) - use plain polling only
+  /api/volatile-data:
+    get:
+      tags: [telemetry]
+      operationId: getVolatileData
+      summary: Merged Remote Node telemetry (snapshot, or delta with `since`)
+      parameters:
+        - name: since
+          in: query
+          required: false
+          description: |
+            Revision the client already has. The server answers with a delta
+            (has `base`) or, if it cannot (unknown/expired/other boot), with a full
+            snapshot (no `base`).
+          schema: { type: integer, minimum: 0 }
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: Snapshot or delta
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+            X-Revision:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/VolatileSnapshot'
+                  - $ref: '#/components/schemas/VolatileDelta'
+        '304':
+          description: Not modified (snapshot requests with a matching If-None-Match)
+  /api/spectrum:
+    get:
+      tags: [spectrum]
+      operationId: getSpectrumLegacy
+      summary: LEGACY spectrum trace (array of {frequency, power}) - kept for the shipped frontend
+      description: |
+        Returns a sweep **completed after** the request arrived (legacy semantics).
+        All clients watching the same analyzer share one hardware sweep. Prefer
+        `/api/spectrum/latest` or the spectrum WebSocket in new code.
+      deprecated: true
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+        - $ref: '#/components/parameters/Port'
+        - $ref: '#/components/parameters/StartHz'
+        - $ref: '#/components/parameters/StopHz'
+        - $ref: '#/components/parameters/Points'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: One sweep
+          headers:
+            X-Sweep-Id:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LegacySpectrum' }
+        '503': { $ref: '#/components/responses/Busy' }
+  /api/spectrum/latest:
+    get:
+      tags: [spectrum]
+      operationId: getSpectrumLatest
+      summary: Latest sweep - compact JSON or binary frame, optional decimation and long-poll
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+        - $ref: '#/components/parameters/Port'
+        - $ref: '#/components/parameters/StartHz'
+        - $ref: '#/components/parameters/StopHz'
+        - $ref: '#/components/parameters/Points'
+        - name: maxPoints
+          in: query
+          description: |
+            Peak-detector decimation to (at most) this many points, e.g. the canvas
+            width in device pixels. Rounded up to a multiple of 64 (16..65536).
+          schema: { type: integer, minimum: 16, maximum: 65536 }
+        - name: waitMs
+          in: query
+          description: |
+            Long-poll: if If-None-Match matches the current sweep, wait up to this
+            long for the next one instead of answering 304 immediately.
+          schema: { type: integer, minimum: 0, maximum: 10000 }
+        - name: encoding
+          in: query
+          description: Binary encoding (only with the binary media type)
+          schema: { type: string, enum: [i16, f32], default: i16 }
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - name: Accept
+          in: header
+          description: '`application/vnd.das.spectrum` selects the binary frame; otherwise compact JSON.'
+          schema: { type: string }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: Latest sweep
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+            X-Sweep-Id:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompactSpectrum' }
+            application/vnd.das.spectrum:
+              schema:
+                type: string
+                format: binary
+                description: DSPC v1 frame - see spectrum-binary-frame.md
+        '304':
+          description: The client already has this sweep
+        '503': { $ref: '#/components/responses/Busy' }
+  /api/dtf:
+    get:
+      tags: [dtf]
+      operationId: getDistanceToFault
+      summary: Distance-to-Fault profile of a feeder - latest measurement, ETag, optional long-poll
+      description: |
+        Opt-in (capability `dtf`). The Remote Node's analyzer sweeps the feeder's
+        reflection (S11); the service returns the return loss over distance and the
+        located reflections, the worst first flagged as faults. Requests with the same
+        settings share one measurement session; nobody asking for 15 s stops it.
+        Method, limits and validation: das-05 docs/DTF.md.
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+        - $ref: '#/components/parameters/Port'
+        - $ref: '#/components/parameters/StartHz'
+        - $ref: '#/components/parameters/StopHz'
+        - name: points
+          in: query
+          description: Frequency points (default 1024, or derived from maxDistanceM).
+          schema: { type: integer, minimum: 64, maximum: 16001 }
+        - name: maxDistanceM
+          in: query
+          description: Distance to analyse; without `points`, enough points for 1.25 x this range.
+          schema: { type: number, minimum: 0, default: 0 }
+        - name: velocityFactor
+          in: query
+          schema: { type: number, minimum: 0.5, maximum: 1.0, default: 0.88 }
+        - name: cableLossDbPer100m
+          in: query
+          schema: { type: number, minimum: 0, maximum: 50, default: 6 }
+        - name: window
+          in: query
+          schema: { type: string, enum: [rect, hann, kaiser], default: hann }
+        - name: thresholdDb
+          in: query
+          description: Reflections with a return loss below this are faults (20 dB = VSWR 1.22).
+          schema: { type: number, default: 20 }
+        - name: waitMs
+          in: query
+          description: With If-None-Match, wait up to this long for the next measurement.
+          schema: { type: integer, minimum: 0, maximum: 10000 }
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: The latest profile
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+            X-Measurement-Id:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DtfProfile' }
+        '304':
+          description: The client already has this measurement
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Busy' }
+  /api/nodes/{nodeId}/config:
+    parameters:
+      - name: nodeId
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [configuration]
+      operationId: getNodeConfig
+      summary: Current configuration of a Remote Node (ETag for If-Match)
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: Current configuration
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NodeConfigEnvelope' }
+        '404': { $ref: '#/components/responses/Error' }
+    put:
+      tags: [configuration]
+      operationId: putNodeConfig
+      summary: Replace the configuration (optimistic concurrency via If-Match)
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: ETag from the GET. Without it the write is last-writer-wins (legacy behaviour).
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NodeConfig' }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: Applied; returns the new version
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NodeConfigEnvelope' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412':
+          description: Someone else changed the node since your GET - reload and re-apply
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api/metrics:
+    get:
+      tags: [meta]
+      operationId: getMetrics
+      summary: Operational metrics (JSON, or Prometheus text with ?format=prom)
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [json, prom] }
+      responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '200':
+          description: Metrics
+          content:
+            application/json:
+              schema: { type: object }
+            text/plain:
+              schema: { type: string }
+components:
+  parameters:
+    NodeId:
+      name: nodeId
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Port:
+      name: port
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    StartHz:
+      name: startHz
+      in: query
+      schema: { type: number, default: 700000000 }
+    StopHz:
+      name: stopHz
+      in: query
+      schema: { type: number, default: 2700000000 }
+    Points:
+      name: points
+      in: query
+      schema: { type: integer, minimum: 101, maximum: 200001, default: 50001 }
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      schema: { type: string }
+    AcceptEncoding:
+      name: Accept-Encoding
+      in: header
+      description: gzip is used when offered (all browsers do).
+      schema: { type: string }
+  headers:
+    ETag:
+      description: Strong validator. Contains a per-boot id, so tags never survive a restart.
+      schema: { type: string }
+  securitySchemes:
+    deviceSession:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Authentication is unchanged from the shipped release (modelled here as a session cookie). WebSocket upgrades carry the same cookie.
+  responses:
+    Unauthorized:
+      description: Not logged in
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Busy:
+      description: Temporarily overloaded - retry after the given seconds
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Heartbeat:
+      type: object
+      description: |
+        Only `status` is guaranteed: when a backend service restarts, the gateway
+        itself answers with `status: degraded` and the affected service marked `down`.
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        server: { type: string, examples: [das-hotfix-node, das-core-api, das-edge-go] }
+        version: { type: string }
+        bootId: { type: string }
+        time: { type: integer, description: epoch ms }
+        uptimeS: { type: number }
+        eventLoop:
+          description: Node.js implementations only
+          type: object
+          properties:
+            lagP50Ms: { type: number }
+            lagP99Ms: { type: number }
+            lagMaxMs: { type: number }
+            utilization: { type: [number, 'null'] }
+        runtime:
+          description: Go implementation only
+          type: object
+          additionalProperties: true
+        services:
+          description: Health of backend services behind a gateway
+          type: object
+          additionalProperties: { type: string, enum: [ok, degraded, down] }
+    Capabilities:
+      type: object
+      required: [api, features]
+      properties:
+        api: { type: string, const: das-v1 }
+        server: { type: string }
+        version: { type: string }
+        features:
+          type: object
+          properties:
+            etag: { type: boolean }
+            volatileDelta: { type: boolean }
+            spectrumLatest: { type: boolean }
+            spectrumBinary: { type: boolean }
+            spectrumDecimation: { type: boolean }
+            spectrumLongPoll: { type: boolean }
+            configOptimisticLocking: { type: boolean }
+            wsTelemetry: { type: boolean, description: '/api/ws/telemetry available (asyncapi.yaml)' }
+            wsSpectrum: { type: boolean, description: '/api/ws/spectrum available (asyncapi.yaml)' }
+            dtf: { type: boolean, description: '/api/dtf available (Distance-to-Fault)' }
+        limits:
+          type: object
+          additionalProperties: true
+    DtfProfile:
+      type: object
+      required: [measurementId, nodeId, port, timestamp, startM, binM, count, returnLossDb, events, eventsTruncated]
+      additionalProperties: true
+      properties:
+        measurementId: { type: integer }
+        nodeId: { type: integer }
+        port: { type: integer }
+        timestamp: { type: integer, description: epoch ms }
+        startHz: { type: number }
+        stopHz: { type: number }
+        points: { type: integer }
+        velocityFactor: { type: number }
+        cableLossDbPer100m: { type: number }
+        window: { type: string, enum: [rect, hann, kaiser] }
+        thresholdDb: { type: number }
+        maxDistanceM: { type: number }
+        resolutionM: { type: number, description: 'c x VF / 2B' }
+        maxRangeM: { type: number, description: 'unambiguous range: c x VF / (2 x frequency step)' }
+        noiseFloorRlDb: { type: number, description: noise floor as a return loss at 0 m }
+        startM: { type: number }
+        binM: { type: number }
+        count: { type: integer }
+        returnLossDb:
+          type: array
+          description: 'Value j is at startM + j x binM. Peak-hold decimated to at most 4096 values (the worst return loss of each group).'
+          items: { type: number }
+        events:
+          type: array
+          description: Located reflections, sorted by distance; at most 64 (the strongest).
+          items: { $ref: '#/components/schemas/DtfEvent' }
+        eventsTruncated: { type: boolean }
+    DtfEvent:
+      type: object
+      required: [distanceM, returnLossDb, vswr, fault]
+      properties:
+        distanceM: { type: number }
+        returnLossDb: { type: number }
+        vswr: { type: number }
+        fault: { type: boolean, description: return loss below thresholdDb }
+    NodeTelemetry:
+      type: object
+      description: One Remote Node. Additional fields are allowed and must be ignored by clients that do not know them.
+      required: [id, name, status]
+      additionalProperties: true
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        type: { type: string }
+        status: { type: string, enum: [online, degraded, offline] }
+        temperatureC: { type: number }
+        bands:
+          type: array
+          items: { type: object, additionalProperties: true }
+        alarms:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              severity: { type: string, enum: [minor, major, critical] }
+              since: { type: integer }
+    VolatileSnapshot:
+      type: object
+      required: [rev, generatedAt, nodeCount, nodes]
+      properties:
+        rev:
+          type: integer
+          description: Opaque revision. Starts at a random per-boot base (2^40..2^52) and increases by one per publish.
+        generatedAt: { type: integer }
+        nodeCount: { type: integer }
+        nodes:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/NodeTelemetry' }
+    VolatileDelta:
+      type: object
+      required: [rev, base, changed, removed]
+      properties:
+        rev: { type: integer }
+        base: { type: integer, description: The revision this delta applies to }
+        generatedAt: { type: integer }
+        changed:
+          type: object
+          description: Full new state of every node that changed (replace, do not merge)
+          additionalProperties: { $ref: '#/components/schemas/NodeTelemetry' }
+        removed:
+          type: array
+          items: { type: integer }
+    LegacySpectrum:
+      type: object
+      required: [sweepId, nodeId, port, timestamp, startHz, stopHz, rbwHz, points]
+      properties:
+        sweepId: { type: integer }
+        nodeId: { type: integer }
+        port: { type: integer }
+        timestamp: { type: integer }
+        startHz: { type: number }
+        stopHz: { type: number }
+        rbwHz: { type: number }
+        points:
+          type: array
+          items:
+            type: object
+            required: [frequency, power]
+            properties:
+              frequency: { type: number, description: Hz }
+              power: { type: number, description: dBm }
+    CompactSpectrum:
+      type: object
+      required: [sweepId, nodeId, port, timestamp, startHz, stepHz, count, decimated, powerDbm]
+      properties:
+        sweepId: { type: integer }
+        nodeId: { type: integer }
+        port: { type: integer }
+        timestamp: { type: integer }
+        startHz: { type: number, description: 'Frequency of powerDbm[0]' }
+        stepHz: { type: number, description: 'frequency(i) = startHz + i * stepHz' }
+        count: { type: integer }
+        decimated: { type: boolean, description: Peak-detector decimation applied }
+        powerDbm:
+          type: array
+          items: { type: [number, 'null'] }
+    NodeConfig:
+      type: object
+      required: [name, dlGainDb, ulGainDb, bandsEnabled, tempAlarmC, notes]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 32 }
+        dlGainDb: { type: number, minimum: 0, maximum: 40 }
+        ulGainDb: { type: number, minimum: 0, maximum: 30 }
+        bandsEnabled:
+          type: object
+          additionalProperties: { type: boolean }
+        tempAlarmC: { type: number, minimum: 40, maximum: 90 }
+        notes: { type: string, maxLength: 500 }
+    NodeConfigEnvelope:
+      type: object
+      required: [nodeId, version, config]
+      properties:
+        nodeId: { type: integer }
+        version: { type: integer }
+        updatedAt: { type: integer }
+        config: { $ref: '#/components/schemas/NodeConfig' }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, examples: [NOT_FOUND, PRECONDITION_FAILED, VALIDATION_FAILED, POOL_BUSY] }
+        message: { type: string }
+        errors:
+          type: array
+          items: { type: string }
+        current: { $ref: '#/components/schemas/NodeConfigEnvelope' }

@@ -1,0 +1,230 @@
+asyncapi: 3.1.0
+info:
+  title: DAS Master Node push API (WebSocket)
+  version: 1.1.0
+  description: |
+    Push transports behind the same origin as the REST API (`openapi.yaml`).
+    Available when `GET /api/capabilities` reports `wsTelemetry` / `wsSpectrum`.
+
+    Design rules:
+    * **Push on change only.** The server sends a telemetry delta only when a
+      node's normalised state changed (field hygiene + deadbands + exact
+      comparison), at most once per publish interval (default 1 s).
+    * **Resumable.** A reconnecting client sends the last revision it applied;
+      the server answers with the missing delta or a fresh snapshot.
+    * **Conflation, never unbounded queues.** A slow client skips intermediate
+      telemetry revisions (it later gets one combined catch-up delta) and
+      intermediate spectrum frames (latest sweep wins).
+    * **Liveness.** Any message proves the server is alive; the server sends `hb`
+      after `heartbeatMs` of silence, so clients need no separate heartbeat poll.
+    * **Two sockets, not one.** Telemetry and spectrum use separate connections so a
+      100 kB spectrum frame never delays a telemetry delta (no head-of-line blocking),
+      and the spectrum socket only exists while an analyzer view is open.
+    * The upgrade request must carry the session cookie and a same-origin `Origin`
+      header (cross-site WebSocket hijacking protection).
+defaultContentType: application/json
+servers:
+  device:
+    host: '{deviceHost}'
+    protocol: wss
+    description: Same host as the web UI (ws:// when the UI is served over plain HTTP)
+    variables:
+      deviceHost:
+        default: master-node.local
+channels:
+  telemetry:
+    address: /api/ws/telemetry
+    title: volatile_data push (snapshots + deltas)
+    messages:
+      hello: { $ref: '#/components/messages/Hello' }
+      subscribeTelemetry: { $ref: '#/components/messages/SubscribeTelemetry' }
+      snapshot: { $ref: '#/components/messages/Snapshot' }
+      delta: { $ref: '#/components/messages/Delta' }
+      hb: { $ref: '#/components/messages/Heartbeat' }
+      ping: { $ref: '#/components/messages/Ping' }
+      pong: { $ref: '#/components/messages/Pong' }
+      error: { $ref: '#/components/messages/Error' }
+  spectrum:
+    address: /api/ws/spectrum
+    title: Spectrum analyzer frames (binary DSPC v1)
+    messages:
+      hello: { $ref: '#/components/messages/Hello' }
+      subscribeSpectrum: { $ref: '#/components/messages/SubscribeSpectrum' }
+      subscribed: { $ref: '#/components/messages/Subscribed' }
+      unsubscribe: { $ref: '#/components/messages/Unsubscribe' }
+      frame: { $ref: '#/components/messages/SpectrumFrame' }
+      hb: { $ref: '#/components/messages/Heartbeat' }
+      error: { $ref: '#/components/messages/Error' }
+operations:
+  telemetryHello:
+    action: send
+    channel: { $ref: '#/channels/telemetry' }
+    messages: [{ $ref: '#/channels/telemetry/messages/hello' }]
+  telemetrySubscribe:
+    action: receive
+    channel: { $ref: '#/channels/telemetry' }
+    summary: Client subscribes, optionally resuming from a revision it already applied
+    messages: [{ $ref: '#/channels/telemetry/messages/subscribeTelemetry' }]
+  telemetryPush:
+    action: send
+    channel: { $ref: '#/channels/telemetry' }
+    summary: Server pushes the snapshot, then one delta per published revision
+    messages:
+      - { $ref: '#/channels/telemetry/messages/snapshot' }
+      - { $ref: '#/channels/telemetry/messages/delta' }
+      - { $ref: '#/channels/telemetry/messages/hb' }
+      - { $ref: '#/channels/telemetry/messages/pong' }
+      - { $ref: '#/channels/telemetry/messages/error' }
+  telemetryPing:
+    action: receive
+    channel: { $ref: '#/channels/telemetry' }
+    summary: Optional application-level RTT probe
+    messages: [{ $ref: '#/channels/telemetry/messages/ping' }]
+  spectrumHello:
+    action: send
+    channel: { $ref: '#/channels/spectrum' }
+    messages: [{ $ref: '#/channels/spectrum/messages/hello' }]
+  spectrumSubscribe:
+    action: receive
+    channel: { $ref: '#/channels/spectrum' }
+    summary: Select analyzer + decimation; re-send to change (e.g. on canvas resize)
+    messages:
+      - { $ref: '#/channels/spectrum/messages/subscribeSpectrum' }
+      - { $ref: '#/channels/spectrum/messages/unsubscribe' }
+  spectrumPush:
+    action: send
+    channel: { $ref: '#/channels/spectrum' }
+    summary: One binary frame per completed sweep (conflated for slow clients)
+    messages:
+      - { $ref: '#/channels/spectrum/messages/subscribed' }
+      - { $ref: '#/channels/spectrum/messages/frame' }
+      - { $ref: '#/channels/spectrum/messages/hb' }
+      - { $ref: '#/channels/spectrum/messages/error' }
+components:
+  messages:
+    Hello:
+      name: hello
+      payload:
+        type: object
+        required: [type, api, server, heartbeatMs, time]
+        properties:
+          type: { type: string, const: hello }
+          api: { type: string, const: das-v1 }
+          server: { type: string }
+          topic: { type: string, enum: [volatile, spectrum] }
+          heartbeatMs: { type: integer, description: The server sends hb after this much silence }
+          time: { type: integer }
+    SubscribeTelemetry:
+      name: sub
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type: { type: string, const: sub }
+          rev:
+            type: [integer, 'null']
+            description: Last revision the client applied (resume); omit/null for a snapshot
+    Snapshot:
+      name: snapshot
+      payload:
+        type: object
+        required: [type, rev, generatedAt, nodeCount, nodes]
+        properties:
+          type: { type: string, const: snapshot }
+          rev: { type: integer }
+          generatedAt: { type: integer }
+          nodeCount: { type: integer }
+          nodes:
+            type: object
+            description: nodeId -> NodeTelemetry (see openapi.yaml)
+            additionalProperties: { type: object }
+    Delta:
+      name: delta
+      payload:
+        type: object
+        required: [type, rev, base, changed, removed]
+        properties:
+          type: { type: string, const: delta }
+          rev: { type: integer }
+          base: { type: integer, description: 'Apply only if the client is at this revision; otherwise re-subscribe with its rev' }
+          generatedAt: { type: integer }
+          changed:
+            type: object
+            description: Full new state of each changed node (replace, do not merge)
+            additionalProperties: { type: object }
+          removed:
+            type: array
+            items: { type: integer }
+    Heartbeat:
+      name: hb
+      payload:
+        type: object
+        required: [type, time]
+        properties:
+          type: { type: string, const: hb }
+          time: { type: integer }
+          rev: { type: integer }
+    Ping:
+      name: ping
+      payload:
+        type: object
+        required: [type, id]
+        properties:
+          type: { type: string, const: ping }
+          id: { type: integer }
+    Pong:
+      name: pong
+      payload:
+        type: object
+        required: [type, id, time]
+        properties:
+          type: { type: string, const: pong }
+          id: { type: integer }
+          time: { type: integer }
+    SubscribeSpectrum:
+      name: sub
+      payload:
+        type: object
+        required: [type, nodeId, port]
+        properties:
+          type: { type: string, const: sub }
+          nodeId: { type: integer, minimum: 1 }
+          port: { type: integer, minimum: 1 }
+          startHz: { type: number }
+          stopHz: { type: number }
+          points: { type: integer }
+          maxPoints: { type: integer, description: 'Peak-detector decimation, e.g. canvas width x devicePixelRatio' }
+          encoding: { type: string, enum: [i16, f32], default: i16 }
+    Subscribed:
+      name: subscribed
+      payload:
+        type: object
+        required: [type, nodeId, port]
+        properties:
+          type: { type: string, const: subscribed }
+          nodeId: { type: integer }
+          port: { type: integer }
+          maxPoints: { type: integer }
+    Unsubscribe:
+      name: unsub
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type: { type: string, const: unsub }
+    SpectrumFrame:
+      name: frame
+      contentType: application/vnd.das.spectrum
+      summary: Binary WebSocket message, DSPC v1 (see spectrum-binary-frame.md)
+      payload:
+        type: string
+        format: binary
+    Error:
+      name: error
+      payload:
+        type: object
+        required: [type, code]
+        properties:
+          type: { type: string, const: error }
+          code: { type: string, examples: [BAD_REQUEST, TOO_MANY_SESSIONS, SWEEP_TIMEOUT] }
+          message: { type: string }
